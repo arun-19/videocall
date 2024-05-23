@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {Alert, NativeModules, PermissionsAndroid, Platform, Text, View} from "react-native"
 import {createNativeStackNavigator} from "@react-navigation/native-stack"
 import {NavigationContainer} from "@react-navigation/native"
-import notifee, { AndroidImportance,AndroidVisibility,EventType } from '@notifee/react-native';
+import notifee from '@notifee/react-native';
 import Home from "./Components/Home";
 import uid from "react-native-uuid"
 import RNCallKeep from 'react-native-callkeep';
@@ -10,21 +10,29 @@ import CallPage from "./Components/CallPage";
 import messaging from "@react-native-firebase/messaging"
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firestore from "@react-native-firebase/firestore"
-import Login from "./Components/Login";
+import Login from "./Components/Authorization/Login";
+import handleincomingvideoCall, { NotifeecancelAllNotification } from "./Notification/notification";
 
+import { navigate,navigationRef } from "./navicationRef";
+import CallView from "./Components/CallView";
+import CallWaitingScreen from "./Components/callWaitingscreen";
+import Register from "./Components/Authorization/Register";
 const Stack=createNativeStackNavigator();
  function App({navigation}:any){
-  async function createCallChannel() {
-    await notifee.createChannel({
-      id: 'call',
-      name: 'Incoming Call Channel',
-      importance: AndroidImportance.HIGH,
-      sound: 'default', 
-      vibration: true,
-    });
-  }
+ 
+
+  const linking = {
+    prefixes: ['videocallapp://'],
+    config: {
+      screens: {
+        Home: 'Home',
+        CallPage: 'Call/:name/:id',
+      },
+    },
+  };
 
   useEffect(()=>{
+  
     const request=async ()=>{
       PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS)
     const authStatus = await messaging().requestPermission();
@@ -58,55 +66,52 @@ const Stack=createNativeStackNavigator();
     }
   }
   request()
-
-
   
-  
-
   
   },[])
 
     
   useEffect(() => {
-    messaging().requestPermission();
     
+    messaging().requestPermission();
+    messaging().onMessageSent(async remoteMessage=>{
+    await handleincomingvideoCall(remoteMessage)
+    })
     const unsubscribe = messaging().onMessage(async remoteMessage => {
-    handleincomingvideoCall(remoteMessage)
+      notifee.cancelTriggerNotifications()
+      if(remoteMessage?.data?.type=="reject"){
+     NotifeecancelAllNotification()
+     }else{
+    if(remoteMessage?.data?.type=="call"){
+    await handleincomingvideoCall(remoteMessage)
+      }
+
+     }
     });
   
-    
-    messaging().setBackgroundMessageHandler(async remoteMessage => { 
-   handleincomingvideoCall(remoteMessage)
-   
+    messaging()
+    .getInitialNotification()
+    .then(async remoteMessage => {
+      if (remoteMessage) {
+     await  handleincomingvideoCall(remoteMessage)
+      }
     });
-
-    messaging().onNotificationOpenedApp(remoteMessage => {
+    
+    messaging().onNotificationOpenedApp(async remoteMessage => {
       
-      console.log('Notification caused app to open from background state:',remoteMessage.data);
+     //open      
     
     });
 try {
   
-  messaging()
-  .getInitialNotification()
-  .then(remoteMessage => {
-    console.log(remoteMessage); 
-    if (remoteMessage) {
-
-      navigation.navigate("Call",remoteMessage)
-      console.log(
-        'Notification caused app open',
-        remoteMessage,
-      );
-    }
-  });
+ 
 } catch (error) {
   
 }
 
 
 
-
+/*
 notifee.onBackgroundEvent(async({ type, detail }:any) => {
   switch (type) {
       case EventType.ACTION_PRESS:
@@ -135,6 +140,7 @@ notifee.onForegroundEvent(({ type, detail}:any) => {
       break;
   }
 });
+*/
 
    
   
@@ -142,49 +148,21 @@ notifee.onForegroundEvent(({ type, detail}:any) => {
   }, []);
  
 
-  const handleincomingvideoCall=async (remoteMessage:any)=>{
 
-    await createCallChannel();
-
-    
-    await notifee.displayNotification({
-      title: 'Incoming Call',
-      body: 'calling...',
-      android: {
-        channelId: 'call',
-        largeIcon: 'https://th.bing.com/th/id/OIP.tlaYbX8A5CfU_fbN_gwtlQHaHa?w=717&h=717&rs=1&pid=ImgDetMain', // URL or local resource
-        sound: 'default',
-        fullScreenAction: {
-          id: 'default'
-        },ongoing:true,visibility:AndroidVisibility.PUBLIC,importance:AndroidImportance.HIGH,
-        actions: [
-          {
-            title: 'Answer',
-            pressAction: { id: 'answer' },
-          },
-          {
-            title: 'Reject',
-            pressAction: { id: 'reject' },
-          },
-        ],
-      }
-    });
- 
-
-   
-    
-  }
   
 
 
  
  return( 
   
- <NavigationContainer>
-     <Stack.Navigator>
+ <NavigationContainer linking={linking} ref={navigationRef}>
+     <Stack.Navigator initialRouteName="Home">
       <Stack.Screen name="Home" component={Home} />
-      <Stack.Screen name="Call" component={CallPage} />
-      <Stack.Screen name="Login" component={Login} />
+      <Stack.Screen name="Call" options={{headerShown:false}} component={CallPage} />
+      <Stack.Screen name="Callwaiting" options={{headerShown:false}}  component={CallWaitingScreen} />
+      <Stack.Screen name="CallView" options={{headerShown:false}}  component={CallView} />
+      <Stack.Screen name="Login" options={{headerShown:false}}  component={Login} />
+      <Stack.Screen name="Register" options={{headerShown:false}}  component={Register} />
     </Stack.Navigator>
     </NavigationContainer>
     )
